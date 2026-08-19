@@ -30,9 +30,9 @@
 
 ## 安装
 
-1. 浏览器安装 [Tampermonkey](https://www.tampermonkey.net/)。
-2. 打开仓库中的 [haoka-auto-publish.user.js](./haoka-auto-publish.user.js)。
-3. 点击 Raw，然后由 Tampermonkey 确认安装。
+1. 浏览器安装 [Tampermonkey](https://www.tampermonkey.net/) 或 [violentmonkey](https://violentmonkey.github.io/)。
+2. 打开 [greasyfork](https://greasyfork.org/zh-CN/scripts/592000-172%E5%8F%B7%E5%8D%A1-%E5%95%86%E5%93%81%E4%B8%8A%E6%9E%B6%E4%B8%8E%E4%BB%A3%E7%90%86%E6%BF%80%E6%B4%BB%E5%8A%A9%E6%89%8B)。
+3. 点击 安装，然后由 Tampermonkey 或 violentmonkey 确认安装。
 4. 登录目标系统并进入对应列表页面。
 5. 使用页面右上角的控制面板手动启动任务。
 
