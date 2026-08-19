@@ -14,6 +14,8 @@
 - 失败操作最多重试 3 次
 - 支持随时安全停止
 
+![宽带商品自动上架预览](./assets/product-auto-publish-preview.png)
+
 ### 代理商自动激活
 
 在“代理商管理 → 代理商列表”中：
@@ -23,6 +25,8 @@
 - 自动遍历到最后一页
 - 失败操作最多重试 3 次
 - 支持随时安全停止
+
+![代理商自动激活预览](./assets/agent-auto-activation-preview.png)
 
 ## 安装
 
