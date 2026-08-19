@@ -1,6 +1,6 @@
 # 172haoka-auto
 
-适用于 172 号卡订单管理系统的 Tampermonkey（油猴）自动化助手。
+适用于 172 号卡订单管理系统的 Tampermonkey（油猴）或 violentmonkey（暴力猴）自动化助手。
 
 ## 功能
 
