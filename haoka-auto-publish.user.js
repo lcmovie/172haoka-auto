@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         172号卡 - 商品上架与代理激活助手
 // @namespace    https://haoka.lot-ml.com/
-// @version      1.1.4
+// @version      1.1.5
 // @description  自动遍历宽带商品并上架；自动遍历代理商列表并激活到期代理
 // @author       Codex
 // @match        https://haoka.lot-ml.com/*
@@ -13,7 +13,6 @@
     'use strict';
 
     const CONFIG = {
-        preferredPageSize: '90',
         agentPageSize: '20',
         actionTimeout: 30000,
         pageTimeout: 20000,
@@ -96,7 +95,7 @@
         }
     }
 
-    async function changePageSize(pageSize = CONFIG.preferredPageSize) {
+    async function changePageSize(pageSize) {
         const select = document.querySelector('.layui-laypage-limits select');
         if (!select || ![...select.options].some(o => o.value === pageSize)) return;
         if (select.value === pageSize) return;
@@ -145,7 +144,7 @@
         await waitFor(() => !confirmDialog?.isConnected, 5000, 100).catch(() => {
             confirmDialog?.querySelector('.layui-layer-close')?.click();
         });
-        await sleep(1000);
+        await sleep(1500);
         return productId;
     }
 
@@ -201,8 +200,7 @@
         document.querySelector('#haoka-auto-stop').disabled = false;
 
         try {
-            setStatus('正在调整分页并回到第 1 页…');
-            await changePageSize();
+            setStatus('正在回到第 1 页…');
             await jumpToFirstPage();
 
             while (!stopRequested) {
