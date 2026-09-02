@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         172号卡 - 商品上架与代理激活助手
 // @namespace    https://haoka.lot-ml.com/
-// @version      1.1.2
+// @version      1.1.3
 // @description  自动遍历宽带商品并上架；自动遍历代理商列表并激活到期代理
 // @author       Codex
 // @match        https://haoka.lot-ml.com/*
@@ -17,22 +17,14 @@
         agentPageSize: '20',
         actionTimeout: 30000,
         pageTimeout: 20000,
-        acknowledgementTimeout: 15000,
-        verifyInitialDelay: 5000,
-        verifyInterval: 5000,
-        verifyTimeout: 60000,
         interval: 300,
         maxRetriesPerProduct: 3,
     };
 
     let running = false;
     let stopRequested = false;
-    let successCount = 0;
     let failedCount = 0;
     let submittedCount = 0;
-    const attempts = new Map();
-    const submittedProducts = new Set();
-    const pendingProducts = new Set();
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     const text = (el) => (el?.textContent || '').trim();
@@ -74,11 +66,6 @@
             .find(btn => text(btn) === '上架' && btn.offsetParent !== null);
     }
 
-    function isProductPublished(productId) {
-        const row = findProductRow(productId);
-        return [...(row?.querySelectorAll('button') || [])].some(btn => text(btn) === '下架');
-    }
-
     function isTableLoading() {
         return [...document.querySelectorAll('.layui-layer-loading, .layui-table-init')]
             .some(el => el.offsetParent !== null);
@@ -105,7 +92,7 @@
     function updateStats() {
         const stats = document.querySelector('#haoka-auto-stats');
         if (stats) {
-            stats.textContent = `已提交 ${submittedCount} ｜成功 ${successCount} ｜待确认 ${pendingProducts.size} ｜失败 ${failedCount} ｜第 ${getCurrentPage()} 页`;
+            stats.textContent = `已点击确认 ${submittedCount} ｜跳过 ${failedCount} ｜第 ${getCurrentPage()} 页`;
         }
     }
 
@@ -140,8 +127,6 @@
 
     async function publishOne(button) {
         const productId = getProductId(button);
-        const oldAttempt = attempts.get(productId) || 0;
-        attempts.set(productId, oldAttempt + 1);
         setStatus(`正在上架商品 ${productId}…`);
 
         button.click();
@@ -150,109 +135,45 @@
             const dialog = dialogs.find(el => text(el).includes('确认要上下架吗'));
             return dialog?.querySelector('.layui-layer-btn0');
         });
+        const confirmDialog = confirmButton.closest('.layui-layer-dialog');
         confirmButton.click();
 
-        // 新版页面只返回排队提示，不会主动刷新表格或改变“上架”按钮。
-        const acknowledgement = await waitFor(() => [...document.querySelectorAll('.layui-layer-dialog')]
-            .find(el => text(el).includes('系统正在配置上架信息，请耐心排队等待')),
-        CONFIG.acknowledgementTimeout, 100);
-
         submittedCount++;
-        submittedProducts.add(productId);
-        pendingProducts.add(productId);
-        attempts.delete(productId);
         updateStats();
 
-        // 等本次提示消失后再提交下一个，避免把上一件商品的提示误认成新回执。
-        await waitFor(() => !acknowledgement.isConnected, 10000, 100).catch(() => {
-            acknowledgement.querySelector('.layui-layer-close')?.click();
+        // 这里只等待本次确认框退出，确保下一件商品可以继续点击；不等待也不核验上架结果。
+        await waitFor(() => !confirmDialog?.isConnected, 5000, 100).catch(() => {
+            confirmDialog?.querySelector('.layui-layer-close')?.click();
         });
-        await waitForTableReady();
+        await sleep(300);
         return productId;
     }
 
     async function processCurrentPage() {
-        // 固定当前页目标；收到排队提示后，即使旧按钮仍显示“上架”也不会重复提交。
-        const targets = [...new Set(getPublishButtons().map(getProductId))]
-            .filter(productId => !submittedProducts.has(productId));
-        const submittedOnPage = [];
+        // 进入页面时固定目标清单，保证当前页每个“上架”按钮只执行一次。
+        const targets = [...new Set(getPublishButtons().map(getProductId))];
 
         for (const productId of targets) {
-            while (!stopRequested && !submittedProducts.has(productId) &&
-                (attempts.get(productId) || 0) < CONFIG.maxRetriesPerProduct) {
-                let button = findPublishButton(productId);
-                if (!button) {
-                    await waitForTableReady().catch(() => {});
-                    button = findPublishButton(productId);
-                }
-                if (!button) break;
-
-                try {
-                    submittedOnPage.push(await publishOne(button));
-                } catch (error) {
-                    if (stopRequested) throw error;
-                    console.warn(`[自动上架] 商品 ${productId} 提交失败：`, error);
-                    document.querySelector('.layui-layer-dialog .layui-layer-close')?.click();
-
-                    if ((attempts.get(productId) || 0) >= CONFIG.maxRetriesPerProduct) {
-                        failedCount++;
-                        setStatus(`商品 ${productId} 连续提交失败，已跳过`, 'error');
-                    } else {
-                        setStatus(`商品 ${productId} 未收到排队提示，准备重试…`, 'error');
-                    }
-                    updateStats();
-                    await sleep(1000);
-                }
-            }
-        }
-
-        return submittedOnPage;
-    }
-
-    async function reloadCurrentPage() {
-        const currentPage = getCurrentPage();
-        const input = document.querySelector('.layui-laypage-skip input');
-        const button = document.querySelector('.layui-laypage-skip button');
-        if (!input || !button) throw new Error('没有找到当前页刷新控件');
-
-        input.value = String(currentPage);
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-        button.click();
-        await sleep(1000);
-        await waitForTableReady();
-    }
-
-    async function verifySubmittedProducts(productIds) {
-        const remaining = new Set(productIds);
-        if (!remaining.size) return remaining;
-
-        setStatus(`本页已提交 ${remaining.size} 个商品，等待后台处理…`);
-        await sleep(CONFIG.verifyInitialDelay);
-        const deadline = Date.now() + CONFIG.verifyTimeout;
-
-        while (!stopRequested && remaining.size && Date.now() < deadline) {
-            await reloadCurrentPage();
-
-            for (const productId of [...remaining]) {
-                if (isProductPublished(productId)) {
-                    remaining.delete(productId);
-                    pendingProducts.delete(productId);
-                    successCount++;
-                }
+            if (stopRequested) break;
+            const button = findPublishButton(productId);
+            if (!button) {
+                failedCount++;
+                updateStats();
+                continue;
             }
 
-            updateStats();
-            if (remaining.size) {
-                setStatus(`仍有 ${remaining.size} 个商品排队中，${CONFIG.verifyInterval / 1000} 秒后再次核验…`);
-                await sleep(CONFIG.verifyInterval);
+            try {
+                await publishOne(button);
+            } catch (error) {
+                if (stopRequested) throw error;
+                failedCount++;
+                console.warn(`[自动上架] 商品 ${productId} 点击失败，已跳过：`, error);
+                document.querySelector('.layui-layer-dialog .layui-layer-close')?.click();
+                setStatus(`商品 ${productId} 点击失败，已跳过`, 'error');
+                updateStats();
+                await sleep(500);
             }
         }
-
-        if (remaining.size) {
-            setStatus(`本页有 ${remaining.size} 个商品超过核验时间，已标记为待确认且不会重复提交`, 'error');
-        }
-        return remaining;
     }
 
     async function goNextPage() {
@@ -274,12 +195,8 @@
 
         running = true;
         stopRequested = false;
-        successCount = 0;
         failedCount = 0;
         submittedCount = 0;
-        attempts.clear();
-        submittedProducts.clear();
-        pendingProducts.clear();
         document.querySelector('#haoka-auto-start').disabled = true;
         document.querySelector('#haoka-auto-stop').disabled = false;
 
@@ -291,18 +208,16 @@
             while (!stopRequested) {
                 updateStats();
                 setStatus(`正在处理第 ${getCurrentPage()} 页…`);
-                const submittedOnPage = await processCurrentPage();
-                await verifySubmittedProducts(submittedOnPage);
+                await processCurrentPage();
                 if (stopRequested) break;
                 if (!(await goNextPage())) {
-                    const hasIssue = failedCount > 0 || pendingProducts.size > 0;
-                    setStatus(`全部完成：已提交 ${submittedCount}，成功 ${successCount}，待确认 ${pendingProducts.size}，失败 ${failedCount}`,
-                        hasIssue ? 'error' : 'done');
-                    alert(`自动上架完成！\n已提交：${submittedCount}\n确认成功：${successCount}\n待确认：${pendingProducts.size}\n提交失败：${failedCount}`);
+                    setStatus(`全部点击完成：已确认 ${submittedCount}，跳过 ${failedCount}`,
+                        failedCount > 0 ? 'error' : 'done');
+                    alert(`自动上架点击完成！\n已点击确认：${submittedCount}\n跳过：${failedCount}\n\n脚本未等待或核验后台上架结果。`);
                     return;
                 }
             }
-            setStatus(`已停止：已提交 ${submittedCount}，成功 ${successCount}，待确认 ${pendingProducts.size}，失败 ${failedCount}`, 'error');
+            setStatus(`已停止：已点击确认 ${submittedCount}，跳过 ${failedCount}`, 'error');
         } catch (error) {
             console.error('[自动上架] 任务中止：', error);
             setStatus(`任务中止：${error.message}`, 'error');
@@ -327,7 +242,7 @@
         panel.innerHTML = `
             <div style="font-weight:700;margin-bottom:8px">商品自动上架</div>
             <div id="haoka-auto-status" style="font-size:12px;margin-bottom:6px">就绪，请手动开始</div>
-            <div id="haoka-auto-stats" style="font-size:12px;color:#ddd;margin-bottom:9px">已提交 0 ｜成功 0 ｜待确认 0 ｜失败 0 ｜第 ${getCurrentPage()} 页</div>
+            <div id="haoka-auto-stats" style="font-size:12px;color:#ddd;margin-bottom:9px">已点击确认 0 ｜跳过 0 ｜第 ${getCurrentPage()} 页</div>
             <button id="haoka-auto-start">开始全部上架</button>
             <button id="haoka-auto-stop" disabled>停止</button>
         `;
