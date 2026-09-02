@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         172号卡 - 商品上架与代理激活助手
 // @namespace    https://haoka.lot-ml.com/
-// @version      1.1.3
+// @version      1.1.4
 // @description  自动遍历宽带商品并上架；自动遍历代理商列表并激活到期代理
 // @author       Codex
 // @match        https://haoka.lot-ml.com/*
@@ -145,7 +145,7 @@
         await waitFor(() => !confirmDialog?.isConnected, 5000, 100).catch(() => {
             confirmDialog?.querySelector('.layui-layer-close')?.click();
         });
-        await sleep(300);
+        await sleep(1000);
         return productId;
     }
 
